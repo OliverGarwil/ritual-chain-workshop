@@ -14,7 +14,7 @@ contract PrivacyPreservingBountyJudge {
         bool judged;
         bool finalized;
         bool refunded;
-        string aiReview;
+        bytes llmInput;
         uint256 winnerIndex;
     }
 
@@ -90,7 +90,7 @@ contract PrivacyPreservingBountyJudge {
                 judged: false,
                 finalized: false,
                 refunded: false,
-                aiReview: "",
+                llmInput: "",
                 winnerIndex: NO_WINNER
             })
         );
@@ -99,14 +99,15 @@ contract PrivacyPreservingBountyJudge {
     }
 
     /// @notice Compute the commitment participants should submit before the reveal phase.
-    /// @dev Includes bountyId and participant address so commitments cannot be copied across wallets or bounties.
+    /// @dev Formula from the homework: keccak256(abi.encodePacked(answer, salt, msg.sender, bountyId)).
+    ///      Binding to msg.sender + bountyId stops cross-wallet and cross-bounty replay.
     function computeCommitment(
         uint256 bountyId,
         address participant,
         string memory answer,
         bytes32 salt
     ) public pure returns (bytes32) {
-        return keccak256(abi.encode(bountyId, participant, answer, salt));
+        return keccak256(abi.encodePacked(answer, salt, participant, bountyId));
     }
 
     function submitCommitment(uint256 bountyId, bytes32 commitment) external bountyExists(bountyId) {
@@ -147,20 +148,21 @@ contract PrivacyPreservingBountyJudge {
 
     /// @notice Stores one batch AI review covering every valid revealed answer for the bounty.
     /// @dev The review should come from a single Ritual AI batch request, not one request per answer.
+    ///      llmInput is bytes so callers can pass the raw LLM payload (UTF-8 text or JSON bytes).
     function judgeAll(
         uint256 bountyId,
-        string calldata aiReview
+        bytes calldata llmInput
     ) external bountyExists(bountyId) onlyBountyOwner(bountyId) {
         Bounty storage bounty = bounties[bountyId];
         require(block.timestamp >= bounty.revealDeadline, "Reveal phase still open");
         require(!bounty.judged, "Already judged");
         require(revealedSubmissions[bountyId].length > 0, "No valid reveals");
-        require(bytes(aiReview).length > 0, "Empty AI review");
+        require(llmInput.length > 0, "Empty AI review");
 
         bounty.judged = true;
-        bounty.aiReview = aiReview;
+        bounty.llmInput = llmInput;
 
-        emit BountyJudged(bountyId, revealedSubmissions[bountyId].length, keccak256(bytes(aiReview)));
+        emit BountyJudged(bountyId, revealedSubmissions[bountyId].length, keccak256(llmInput));
     }
 
     function finalizeWinner(
@@ -224,7 +226,7 @@ contract PrivacyPreservingBountyJudge {
             bool judged,
             bool finalized,
             bool refunded,
-            string memory aiReview,
+            bytes memory llmInput,
             uint256 winnerIndex,
             uint256 revealedCount
         )
@@ -240,7 +242,7 @@ contract PrivacyPreservingBountyJudge {
             bounty.judged,
             bounty.finalized,
             bounty.refunded,
-            bounty.aiReview,
+            bounty.llmInput,
             bounty.winnerIndex,
             revealedSubmissions[bountyId].length
         );

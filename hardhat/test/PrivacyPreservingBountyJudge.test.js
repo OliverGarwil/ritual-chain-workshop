@@ -162,25 +162,26 @@ describe("PrivacyPreservingBountyJudge", function () {
     await time.increaseTo(submissionDeadline);
     await judge.connect(alice).revealAnswer(bountyId, answerA, saltA);
 
-    await expect(judge.connect(owner).judgeAll(bountyId, "Winner recommendation: index 0")).to.be.revertedWith(
+    const reviewBytes = ethers.toUtf8Bytes("Winner recommendation: index 0");
+    await expect(judge.connect(owner).judgeAll(bountyId, reviewBytes)).to.be.revertedWith(
       "Reveal phase still open"
     );
 
     await time.increaseTo(revealDeadline);
-    await expect(judge.connect(bob).judgeAll(bountyId, "Winner recommendation: index 0")).to.be.revertedWith(
+    await expect(judge.connect(bob).judgeAll(bountyId, reviewBytes)).to.be.revertedWith(
       "Only bounty owner"
     );
-    await expect(judge.connect(owner).judgeAll(bountyId, "")).to.be.revertedWith("Empty AI review");
+    await expect(judge.connect(owner).judgeAll(bountyId, "0x")).to.be.revertedWith("Empty AI review");
 
-    await expect(judge.connect(owner).judgeAll(bountyId, "Winner recommendation: index 0"))
+    await expect(judge.connect(owner).judgeAll(bountyId, reviewBytes))
       .to.emit(judge, "BountyJudged")
-      .withArgs(bountyId, 1, ethers.keccak256(ethers.toUtf8Bytes("Winner recommendation: index 0")));
+      .withArgs(bountyId, 1, ethers.keccak256(reviewBytes));
 
-    await expect(judge.connect(owner).judgeAll(bountyId, "Second review")).to.be.revertedWith("Already judged");
+    await expect(judge.connect(owner).judgeAll(bountyId, ethers.toUtf8Bytes("Second review"))).to.be.revertedWith("Already judged");
 
     const bounty = await judge.getBounty(bountyId);
     expect(bounty.judged).to.equal(true);
-    expect(bounty.aiReview).to.equal("Winner recommendation: index 0");
+    expect(bounty.llmInput).to.equal(ethers.hexlify(reviewBytes));
     expect(bounty.revealedCount).to.equal(1);
   });
 
@@ -190,7 +191,7 @@ describe("PrivacyPreservingBountyJudge", function () {
     await judge.connect(alice).submitCommitment(bountyId, await commitmentFor(judge, bountyId, alice, answerA, saltA));
 
     await time.increaseTo(revealDeadline);
-    await expect(judge.connect(owner).judgeAll(bountyId, "No answers")).to.be.revertedWith("No valid reveals");
+    await expect(judge.connect(owner).judgeAll(bountyId, ethers.toUtf8Bytes("No answers"))).to.be.revertedWith("No valid reveals");
     await expect(() => judge.connect(owner).refundIfNoValidReveals(bountyId)).to.changeEtherBalances(
       [judge, owner],
       [-reward, reward]
@@ -214,7 +215,7 @@ describe("PrivacyPreservingBountyJudge", function () {
     await expect(judge.connect(owner).finalizeWinner(bountyId, 0)).to.be.revertedWith("Not judged");
 
     await time.increaseTo(revealDeadline);
-    await judge.connect(owner).judgeAll(bountyId, "Winner recommendation: index 1");
+    await judge.connect(owner).judgeAll(bountyId, ethers.toUtf8Bytes("Winner recommendation: index 1"));
 
     await expect(judge.connect(alice).finalizeWinner(bountyId, 1)).to.be.revertedWith("Only bounty owner");
     await expect(judge.connect(owner).finalizeWinner(bountyId, 2)).to.be.revertedWith("Invalid winner index");
